@@ -608,6 +608,49 @@ mod test {
         lock.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// This tests booting a standalone binary as MCU firmware.
+    #[test]
+    fn test_standalone_runtime() {
+        let lock = TEST_LOCK.lock().unwrap();
+        lock.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        let feature = "test-exit-immediately".to_string();
+        println!("Compiling test firmware {}", &feature);
+        let test_runtime = mcu_builder::runtime_build_standalone(
+            "tests/standalone_hello",     // target_name
+            &[feature.as_str()],    // features
+            None,                   // output_name
+            Some(platform()),       // platform
+            Some(memory_map()),     // memory_map,
+            false,                  // use_dccm_for_stack
+            None,                   // dccm_offset
+            None,                   // dccm_size
+            None,                   // log_flash_config
+            None,                   // mcu_image_header
+        ).expect("Runtime build failed");
+        let i3c_port = "65534".to_string();
+        let _test = run_runtime(
+            &feature,               // feature
+            ROM.to_path_buf(),      // rom_path
+            test_runtime.into(),    // runtime_path
+            i3c_port,               // i3c_port
+            true,                   // active_mode
+            false,                  // manufacturing mode
+            None,                   // soc_images
+            None,                   // streaming_boot_package_path
+            None,                   // primary_flash_image_path
+            None,                   // secondary_flash_image_path
+            None,                   // caliptra_builder
+            None,                   // hw_revision
+            None,                   // fuse_soc_manifest_svn
+            None,                   // fuse_soc_manifest_max_svn
+            None,                   // fuse_vendor_test_partition
+        );
+
+        // force the compiler to keep the lock
+        lock.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
     #[test]
     fn test_mcu_rom_flash_access() {
         let lock = TEST_LOCK.lock().unwrap();

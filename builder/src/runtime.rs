@@ -18,6 +18,7 @@ use elf::ElfBytes;
 use mcu_config::McuMemoryMap;
 use mcu_config_emulator::flash::LoggingFlashConfig;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -51,6 +52,18 @@ pub(crate) fn bit_flags(platform: &str) -> &str {
         "fpga" => "-C target-feature=+relax", // no-op since this is already included
         _ => "-C target-feature=+unaligned-scalar-mem",
     }
+}
+
+fn get_build_metadata(metadata: &str, key: &str) -> Result<Value> {
+    for line in metadata.lines() {
+        let record: Value = serde_json::from_str(line)?;
+        if let Some(value) = record.get(key) {
+            if !value.is_null() {
+                return Ok(value.clone());
+            }
+        }
+    }
+    Err(anyhow!("could not find {key}"))
 }
 
 /// Build the runtime kernel binary without any applications.
@@ -278,6 +291,142 @@ fn write_cached_values(platform: &str, values: &CachedValues) {
         ),
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub fn runtime_build_standalone(
+    target_name: &str,
+    features: &[&str],
+    output_name: Option<&str>,
+    platform: Option<&str>,
+    memory_map: Option<&McuMemoryMap>,
+    use_dccm_for_stack: bool,
+    dccm_offset: Option<u32>,
+    dccm_size: Option<u32>,
+    log_flash_config: Option<&LoggingFlashConfig>,
+    mcu_image_header: Option<&[u8]>,
+) -> Result<String> 
+{
+    let memory_map = memory_map.unwrap_or(&mcu_config_emulator::EMULATOR_MEMORY_MAP);
+    let target_dir = &PROJECT_ROOT.join(target_name);
+    let ld_file_path = target_dir.join("layout.ld");
+
+    let dccm_offset = dccm_offset.unwrap_or(memory_map.dccm_offset) as usize;
+    let dccm_size = dccm_size.unwrap_or(memory_map.dccm_size) as usize;
+
+    let (ram_start, ram_size) = if use_dccm_for_stack {
+        let ram_size = dccm_size - INTERRUPT_TABLE_SIZE;
+        assert!(
+            DATA_RAM_SIZE <= ram_size,
+            "DCCM size is not large enough for data RAM"
+        );
+        (dccm_offset, ram_size)
+    } else {
+        let ram_start =
+            memory_map.sram_offset as usize + memory_map.sram_size as usize - DATA_RAM_SIZE;
+        (ram_start, DATA_RAM_SIZE)
+    };
+    let mcu_image_header_size = mcu_image_header.map_or(0, |h| h.len());
+
+    // TODO: print data usage after build from ELF file
+
+    let ld_string = runtime_ld_script(
+        memory_map,
+        memory_map.sram_offset + mcu_image_header_size as u32,
+        65536, // kernel_size,
+        0, // apps_offset,
+        0, // apps_size,
+        ram_start as u32,
+        ram_size as u32,
+        dccm_offset as u32,
+        dccm_size as u32,
+        log_flash_config,
+    )?;
+
+    std::fs::write(&ld_file_path, ld_string)?;
+
+    ////////////////////////////////////////////////////////////
+    // TODO:separate this tooling dep stuff into a seprate function.
+    // Validate that rustup is new enough.
+    let minimum_rustup_version = semver::Version::parse("1.23.0").unwrap();
+    let rustup_version = semver::Version::parse(
+        String::from_utf8(Command::new("rustup").arg("--version").output()?.stdout)?
+            .split(" ")
+            .nth(1)
+            .unwrap_or(""),
+    )?;
+    if rustup_version < minimum_rustup_version {
+        println!("WARNING: Required tool `rustup` is out-of-date. Attempting to update.");
+        if !Command::new("rustup").arg("update").status()?.success() {
+            bail!("Failed to update rustup. Please update manually with `rustup update`.");
+        }
+    }
+
+    // Verify that various required Rust components are installed. All of these steps
+    // only have to be done once per Rust version, but will take some time when
+    // compiling for the first time.
+    if !String::from_utf8(
+        Command::new("rustup")
+            .args(["target", "list", "--installed"])
+            .output()?
+            .stdout,
+    )?
+    .split('\n')
+    .any(|line| line.contains(TARGET))
+    {
+        println!("WARNING: Request to compile for a missing TARGET, will install in 5s");
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        if !Command::new("rustup")
+            .arg("target")
+            .arg("add")
+            .arg(TARGET)
+            .status()?
+            .success()
+        {
+            bail!(format!("Failed to install target {}", TARGET));
+        }
+    }
+    ////////////////////////////////////////////////////////////
+
+
+    let features_str = features.join(",");
+    let features = if features.is_empty() {
+        vec![]
+    } else {
+        vec!["--features", features_str.as_str()]
+    };
+
+    let mut cmd = Command::new("cargo");
+    let cmd = cmd
+        .arg("build")
+        .arg("--target")
+        .arg(TARGET)
+        .arg("--release")
+        .arg("--message-format=json")
+        .args(features)
+        .env("RUSTFLAGS", &format!("-C link-arg=-L{} -C link-arg=-Tlink.ld", target_dir.display()))
+        .current_dir(target_dir);
+
+    println!("Executing {:?}", cmd);
+    let result = cmd.output()?;
+    if !result.status.success() {
+        bail!("cargo failed to build {target_name}");
+    }
+    let stdout = String::from_utf8(result.stdout)?;
+    let executable = get_build_metadata(&stdout, "executable")?;
+    let binary = executable.as_str().ok_or(anyhow!("executable isn't a string"))?;
+    let output_name = output_name.map(|s| s.to_string()).unwrap_or(format!("{binary}.bin"));
+    let mut cmd = Command::new(objcopy()?);
+    let cmd = cmd
+        .arg("--output-target=binary")
+        .arg(binary)
+        .arg(output_name.as_str());
+    if !cmd.status()?.success() {
+        bail!("objcopy failed to convert {binary} to binary");
+    }
+    Ok(output_name)
+}
+
+
 
 #[allow(clippy::too_many_arguments)]
 pub fn runtime_build_with_apps_cached(

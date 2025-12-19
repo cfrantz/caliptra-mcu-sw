@@ -73,6 +73,7 @@ members = [
     "runtime/userspace/libtockasync",
     "runtime/userspace/syscall",
     "tests/hello",
+    "tests/standalone_hello",
     "tests/integration",
     "xtask",
 ]

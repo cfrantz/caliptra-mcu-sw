@@ -1,0 +1,15 @@
+# Licensed under the Apache-2.0 license
+
+[package]
+name = "standalone-hello"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[[bin]]
+name = "hello"
+path = "src/hello.rs"
+
+[features]
+test-exit-immediately = []
