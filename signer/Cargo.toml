@@ -1,0 +1,11 @@
+[package]
+name = "signer"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+clap-num.workspace = true
+mcu-builder.workspace = true

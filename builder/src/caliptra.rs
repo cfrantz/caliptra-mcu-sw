@@ -25,6 +25,7 @@ use zerocopy::{transmute, IntoBytes};
 #[derive(Clone, Debug)]
 pub struct CaliptraBuilder {
     fpga: bool,
+    components_config: bool,
     caliptra_rom: Option<PathBuf>,
     caliptra_firmware: Option<PathBuf>,
     soc_manifest: Option<PathBuf>,
@@ -54,6 +55,7 @@ impl CaliptraBuilder {
     ) -> Self {
         Self {
             fpga,
+            components_config: true,
             caliptra_rom,
             caliptra_firmware,
             soc_manifest,
@@ -65,6 +67,11 @@ impl CaliptraBuilder {
             vendor: vendor.unwrap_or_else(|| "ChipsAlliance".to_string()),
             model: model.unwrap_or_else(|| "Caliptra-SS".to_string()),
         }
+    }
+
+    pub fn with_components_config(mut self, components_config: bool) -> Self {
+        self.components_config = components_config;
+        self
     }
 
     pub fn get_caliptra_rom(&self) -> Result<PathBuf> {
@@ -128,7 +135,9 @@ impl CaliptraBuilder {
                 self.soc_manifest_svn.unwrap_or(0),
                 name,
             )?;
-            self.write_fw_components_config(&metadata)?;
+            if self.components_config {
+                self.write_fw_components_config(&metadata)?;
+            }
             self.soc_manifest = Some(path);
         }
         Ok(self.soc_manifest.clone().unwrap())
@@ -233,6 +242,7 @@ impl CaliptraBuilder {
         let path = name
             .map(PathBuf::from)
             .unwrap_or(target_dir().join("soc-manifest"));
+        eprintln!("manifest path: {path:?}");
         std::fs::write(&path, manifest.as_bytes())?;
         Ok(path)
     }

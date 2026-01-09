@@ -3957,6 +3957,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "signer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.51",
+ "clap-num",
+ "mcu-builder",
+]
+
+[[package]]
 name = "simd-adler32"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5025,6 +5035,7 @@ dependencies = [
  "toml 0.8.23",
  "walkdir",
  "zerocopy",
+ "zip",
 ]
 
 [[package]]

@@ -54,7 +54,7 @@ pub(crate) fn bit_flags(platform: &str) -> &str {
     }
 }
 
-fn get_build_metadata(metadata: &str, key: &str) -> Result<Value> {
+pub fn get_build_metadata(metadata: &str, key: &str) -> Result<Value> {
     for line in metadata.lines() {
         let record: Value = serde_json::from_str(line)?;
         if let Some(value) = record.get(key) {
@@ -304,8 +304,7 @@ pub fn runtime_build_standalone(
     dccm_size: Option<u32>,
     log_flash_config: Option<&LoggingFlashConfig>,
     mcu_image_header: Option<&[u8]>,
-) -> Result<String> 
-{
+) -> Result<String> {
     let memory_map = memory_map.unwrap_or(&mcu_config_emulator::EMULATOR_MEMORY_MAP);
     let target_dir = &PROJECT_ROOT.join(target_name);
     let ld_file_path = target_dir.join("layout.ld");
@@ -333,8 +332,8 @@ pub fn runtime_build_standalone(
         memory_map,
         memory_map.sram_offset + mcu_image_header_size as u32,
         65536, // kernel_size,
-        0, // apps_offset,
-        0, // apps_size,
+        0,     // apps_offset,
+        0,     // apps_size,
         ram_start as u32,
         ram_size as u32,
         dccm_offset as u32,
@@ -387,7 +386,6 @@ pub fn runtime_build_standalone(
     }
     ////////////////////////////////////////////////////////////
 
-
     let features_str = features.join(",");
     let features = if features.is_empty() {
         vec![]
@@ -403,7 +401,13 @@ pub fn runtime_build_standalone(
         .arg("--release")
         .arg("--message-format=json")
         .args(features)
-        .env("RUSTFLAGS", &format!("-C link-arg=-L{} -C link-arg=-Tlink.ld", target_dir.display()))
+        .env(
+            "RUSTFLAGS",
+            &format!(
+                "-C link-arg=-L{} -C link-arg=-Tlink.ld",
+                target_dir.display()
+            ),
+        )
         .current_dir(target_dir);
 
     println!("Executing {:?}", cmd);
@@ -413,8 +417,12 @@ pub fn runtime_build_standalone(
     }
     let stdout = String::from_utf8(result.stdout)?;
     let executable = get_build_metadata(&stdout, "executable")?;
-    let binary = executable.as_str().ok_or(anyhow!("executable isn't a string"))?;
-    let output_name = output_name.map(|s| s.to_string()).unwrap_or(format!("{binary}.bin"));
+    let binary = executable
+        .as_str()
+        .ok_or(anyhow!("executable isn't a string"))?;
+    let output_name = output_name
+        .map(|s| s.to_string())
+        .unwrap_or(format!("{binary}.bin"));
     let mut cmd = Command::new(objcopy()?);
     let cmd = cmd
         .arg("--output-target=binary")
@@ -425,8 +433,6 @@ pub fn runtime_build_standalone(
     }
     Ok(output_name)
 }
-
-
 
 #[allow(clippy::too_many_arguments)]
 pub fn runtime_build_with_apps_cached(

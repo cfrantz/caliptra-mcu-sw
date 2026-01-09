@@ -10,6 +10,7 @@ mod auth_manifest;
 mod cargo_lock;
 mod clippy;
 mod deps;
+mod devbundle;
 mod docs;
 mod emulator_cbinding;
 mod format;
@@ -28,6 +29,7 @@ mod test;
 use fpga::Fpga;
 
 use auth_manifest::AuthManifestCommands;
+use devbundle::DevBundleCommands;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -288,6 +290,11 @@ enum Commands {
         #[command(subcommand)]
         subcommand: AuthManifestCommands,
     },
+    /// Auth Manifest generation and parsing
+    DevBundle {
+        #[command(subcommand)]
+        subcommand: DevBundleCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -512,6 +519,9 @@ fn main() {
                 mcu_image,
                 output,
             } => auth_manifest::create(images, mcu_image, output),
+        },
+        Commands::DevBundle { subcommand } => match subcommand {
+            DevBundleCommands::Create { output } => devbundle::create(output),
         },
     };
     result.unwrap_or_else(|e| {

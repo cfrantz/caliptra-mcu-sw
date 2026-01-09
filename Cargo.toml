@@ -72,6 +72,7 @@ members = [
     "runtime/userspace/libtock/unittest",
     "runtime/userspace/libtockasync",
     "runtime/userspace/syscall",
+    "signer",
     "tests/hello",
     "tests/standalone_hello",
     "tests/integration",
